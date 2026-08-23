@@ -11,15 +11,15 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  shared_preferences:
-  url_launcher:
-  file_picker:
-  csv:
+  shared_preferences: ^2.2.2
+  url_launcher: ^6.2.5
+  file_picker: ^8.0.0
+  csv: ^6.0.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints:
+  flutter_lints: ^3.0.0
 
 flutter:
   uses-material-design: true
