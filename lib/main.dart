@@ -33,6 +33,7 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
+  int? _editingOrderIndex;
 
   List<Map<String, String>> _clients = [
     {'name': 'Juan Pérez', 'phone': '50432152136'},
@@ -63,7 +64,7 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> _loadData() async {
     final prefs = await SharedPreferences.getInstance();
-    
+
     String? historyData = prefs.getString('order_history');
     if (historyData != null) {
       setState(() {
@@ -88,6 +89,11 @@ class _MainScreenState extends State<MainScreen> {
       });
     }
 
+    _resetCart();
+  }
+
+  void _resetCart() {
+    _cart.clear();
     for (var p in _products) {
       _cart[p['name']] = 0;
     }
@@ -119,7 +125,7 @@ class _MainScreenState extends State<MainScreen> {
     buffer.writeln('*NUEVO PEDIDO*');
     buffer.writeln('Cliente: $clientName');
     buffer.writeln('---------------------------');
-    
+
     _cart.forEach((product, qty) {
       if (qty > 0) {
         var prod = _products.firstWhere((p) => p['name'] == product, orElse: () => {'price': 0.0});
@@ -127,62 +133,122 @@ class _MainScreenState extends State<MainScreen> {
         buffer.writeln('• $product x$qty = \$${(price * qty).toStringAsFixed(2)}');
       }
     });
-    
+
     buffer.writeln('---------------------------');
     buffer.writeln('*TOTAL: \$${_totalPrice.toStringAsFixed(2)}*');
     return buffer.toString();
   }
 
-  Future<void> _sendWhatsApp() async {
-    if (_selectedClient == null || (_selectedClient!['phone'] ?? '').isEmpty) {
+  Future<void> _sendWhatsApp({String? customPhone, String? customMessage}) async {
+    String? phone = customPhone ?? _selectedClient?['phone'];
+    if (phone == null || phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecciona un cliente con número de teléfono')),
+        const SnackBar(content: Text('Selecciona un cliente con número de teléfono validado.')),
       );
       return;
     }
 
-    String phone = _selectedClient!['phone']!.replaceAll(RegExp(r'[^\d+]'), '');
-    String text = Uri.encodeComponent(_generateOrderSummary());
-    Uri url = Uri.parse("https://wa.me/$phone?text=$text");
+    String cleanPhone = phone.replaceAll(RegExp(r'[^\d+]'), '');
+    String messageText = customMessage ?? _generateOrderSummary();
+    Uri url = Uri.parse("https://wa.me/$cleanPhone?text=${Uri.encodeComponent(messageText)}");
 
     if (await canLaunchUrl(url)) {
       await launchUrl(url, mode: LaunchMode.externalApplication);
-      await _saveOrder();
+      if (customMessage == null) {
+        await _saveOrder();
+      }
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se pudo abrir WhatsApp')),
+          const SnackBar(content: Text('No se pudo abrir WhatsApp.')),
         );
       }
     }
   }
 
   Future<void> _saveOrder() async {
-    Map<String, dynamic> newOrder = {
+    if (_cart.values.every((qty) => qty == 0)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Agrega al menos un producto al pedido.')),
+      );
+      return;
+    }
+
+    Map<String, dynamic> orderData = {
       'client': _selectedClient != null ? _selectedClient!['name']! : 'Cliente General',
+      'phone': _selectedClient != null ? _selectedClient!['phone']! : '',
       'date': DateTime.now().toIso8601String().substring(0, 10),
       'total': _totalPrice,
-      'items': _cart.entries.where((e) => e.value > 0).map((e) => '${e.key} x${e.value}').toList(),
+      'items': _cart.entries.where((e) => e.value > 0).map((e) => {'name': e.key, 'qty': e.value}).toList(),
     };
 
     setState(() {
-      _orderHistory.insert(0, newOrder);
+      if (_editingOrderIndex != null) {
+        _orderHistory[_editingOrderIndex!] = orderData;
+        _editingOrderIndex = null;
+      } else {
+        _orderHistory.insert(0, orderData);
+      }
+      _resetCart();
+      _selectedClient = null;
     });
+
     await _saveData();
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pedido guardado en el Historial')),
+        const SnackBar(content: Text('Pedido procesado y guardado con éxito.')),
       );
     }
+  }
+
+  void _loadOrderForEditing(int index) {
+    var order = _orderHistory[index];
+    setState(() {
+      _editingOrderIndex = index;
+      _resetCart();
+
+      var matchedClient = _clients.firstWhere(
+        (c) => c['name'] == order['client'],
+        orElse: () => {'name': order['client'], 'phone': order['phone'] ?? ''},
+      );
+      _selectedClient = matchedClient;
+
+      List items = order['items'];
+      for (var item in items) {
+        if (item is Map) {
+          _cart[item['name']] = item['qty'];
+        } else if (item is String) {
+          var parts = item.split(' x');
+          if (parts.length == 2) {
+            _cart[parts[0]] = int.tryParse(parts[1]) ?? 1;
+          }
+        }
+      }
+      _selectedIndex = 0;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Sistema de Pedidos'),
+        title: Text(_editingOrderIndex != null ? 'Editando Pedido' : 'Sistema de Pedidos'),
         backgroundColor: Colors.green[700],
+        actions: _editingOrderIndex != null
+            ? [
+                IconButton(
+                  icon: const Icon(Icons.cancel),
+                  onPressed: () {
+                    setState(() {
+                      _editingOrderIndex = null;
+                      _resetCart();
+                      _selectedClient = null;
+                    });
+                  },
+                )
+              ]
+            : null,
       ),
       body: IndexedStack(
         index: _selectedIndex,
@@ -267,11 +333,7 @@ class _MainScreenState extends State<MainScreen> {
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
             ),
-            onChanged: (value) {
-              setState(() {
-                _orderSearchQuery = value;
-              });
-            },
+            onChanged: (value) => setState(() => _orderSearchQuery = value),
           ),
         ),
         if (_orderSearchQuery.isNotEmpty)
@@ -284,10 +346,7 @@ class _MainScreenState extends State<MainScreen> {
               borderRadius: BorderRadius.circular(4),
             ),
             child: searchResults.isEmpty
-                ? const Padding(
-                    padding: EdgeInsets.all(8.0),
-                    child: Text('Sin coincidencias'),
-                  )
+                ? const Padding(padding: EdgeInsets.all(8.0), child: Text('Sin coincidencias'))
                 : ListView.builder(
                     shrinkWrap: true,
                     itemCount: searchResults.length,
@@ -314,10 +373,7 @@ class _MainScreenState extends State<MainScreen> {
         Expanded(
           child: selectedProducts.isEmpty
               ? const Center(
-                  child: Text(
-                    'Usa el buscador arriba para agregar productos.',
-                    style: TextStyle(color: Colors.grey),
-                  ),
+                  child: Text('Usa el buscador arriba para agregar productos.', style: TextStyle(color: Colors.grey)),
                 )
               : ListView.builder(
                   itemCount: selectedProducts.length,
@@ -351,9 +407,7 @@ class _MainScreenState extends State<MainScreen> {
                             Text('$qty', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                             IconButton(
                               icon: const Icon(Icons.add_circle_outline, color: Colors.green, size: 28),
-                              onPressed: () {
-                                setState(() => _cart[name] = qty + 1);
-                              },
+                              onPressed: () => setState(() => _cart[name] = qty + 1),
                             ),
                           ],
                         ),
@@ -379,14 +433,14 @@ class _MainScreenState extends State<MainScreen> {
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, padding: const EdgeInsets.all(10)),
                       onPressed: _saveOrder,
                       icon: const Icon(Icons.save, color: Colors.white),
-                      label: const Text('Guardar', style: TextStyle(color: Colors.white)),
+                      label: Text(_editingOrderIndex != null ? 'Actualizar' : 'Guardar', style: const TextStyle(color: Colors.white)),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.green[600], padding: const EdgeInsets.all(10)),
-                      onPressed: _sendWhatsApp,
+                      onPressed: () => _sendWhatsApp(),
                       icon: const Icon(Icons.send, color: Colors.white),
                       label: const Text('Enviar Pedido', style: TextStyle(color: Colors.white)),
                     ),
@@ -438,12 +492,36 @@ class _MainScreenState extends State<MainScreen> {
             itemCount: _orderHistory.length,
             itemBuilder: (context, index) {
               final order = _orderHistory[index];
+              List rawItems = order['items'] ?? [];
+              String itemsSummary = rawItems.map((e) {
+                if (e is Map) return '${e['name']} x${e['qty']}';
+                return e.toString();
+              }).join(', ');
+
               return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 child: ListTile(
-                  title: Text('${order['client']} - \$${order['total']}'),
-                  subtitle: Text('Fecha: ${order['date']}\nItems: ${(order['items'] as List).join(', ')}'),
+                  title: Text('${order['client']} - \$${(order['total'] as num).toStringAsFixed(2)}'),
+                  subtitle: Text('Fecha: ${order['date']}\nItems: $itemsSummary'),
                   isThreeLine: true,
+                  trailing: PopupMenuButton<String>(
+                    onSelected: (val) {
+                      if (val == 'edit') {
+                        _loadOrderForEditing(index);
+                      } else if (val == 'delete') {
+                        setState(() => _orderHistory.removeAt(index));
+                        _saveData();
+                      } else if (val == 'whatsapp') {
+                        String msg = "*PEDIDO HISTÓRICO*\nCliente: ${order['client']}\nItems: $itemsSummary\nTotal: \$${order['total']}";
+                        _sendWhatsApp(customPhone: order['phone'], customMessage: msg);
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(value: 'edit', child: Text('Editar Pedido')),
+                      const PopupMenuItem(value: 'whatsapp', child: Text('Enviar a WhatsApp')),
+                      const PopupMenuItem(value: 'delete', child: Text('Eliminar Pedido')),
+                    ],
+                  ),
                 ),
               );
             },
@@ -486,7 +564,6 @@ class _MainScreenState extends State<MainScreen> {
                           title: Text(client['name']!, style: const TextStyle(fontWeight: FontWeight.bold)),
                           subtitle: Text(client['phone']!),
                           trailing: PopupMenuButton<String>(
-                            icon: const Icon(Icons.more_vert),
                             onSelected: (value) {
                               if (value == 'edit') {
                                 _showClientDialog(index: originalIndex);
@@ -584,14 +661,12 @@ class _MainScreenState extends State<MainScreen> {
                     itemBuilder: (context, index) {
                       var product = filteredProducts[index];
                       int originalIndex = _products.indexOf(product);
-                      double price = (product['price'] as num).toDouble();
                       return Card(
                         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         child: ListTile(
                           title: Text(product['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text('\$${price.toStringAsFixed(2)}'),
+                          subtitle: Text('\$${(product['price'] as num).toStringAsFixed(2)}'),
                           trailing: PopupMenuButton<String>(
-                            icon: const Icon(Icons.more_vert),
                             onSelected: (value) {
                               if (value == 'edit') {
                                 _showProductDialog(index: originalIndex);
@@ -636,24 +711,25 @@ class _MainScreenState extends State<MainScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Nombre del producto')),
-              TextField(controller: priceController, decoration: const InputDecoration(labelText: 'Precio'), keyboardType: TextInputType.number),
+              TextField(controller: priceController, decoration: const InputDecoration(labelText: 'Precio'), keyboardType: const TextInputType.numberWithOptions(decimal: true)),
             ],
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
             ElevatedButton(
               onPressed: () {
-                if (nameController.text.isNotEmpty && priceController.text.isNotEmpty) {
-                  double price = double.tryParse(priceController.text) ?? 0.0;
+                double? parsedPrice = double.tryParse(priceController.text);
+                if (nameController.text.isNotEmpty && parsedPrice != null) {
                   setState(() {
                     if (index == null) {
-                      _products.add({'name': nameController.text, 'price': price});
+                      _products.add({'name': nameController.text, 'price': parsedPrice});
                       _cart[nameController.text] = 0;
                     } else {
                       String oldName = _products[index]['name'];
                       int oldQty = _cart[oldName] ?? 0;
                       _cart.remove(oldName);
-                      _products[index] = {'name': nameController.text, 'price': price};
+
+                      _products[index] = {'name': nameController.text, 'price': parsedPrice};
                       _cart[nameController.text] = oldQty;
                     }
                   });
