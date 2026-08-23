@@ -504,22 +504,30 @@ class _MainScreenState extends State<MainScreen> {
                   title: Text('${order['client']} - \$${(order['total'] as num).toStringAsFixed(2)}'),
                   subtitle: Text('Fecha: ${order['date']}\nItems: $itemsSummary'),
                   isThreeLine: true,
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (val) {
-                      if (val == 'edit') {
-                        _loadOrderForEditing(index);
-                      } else if (val == 'delete') {
-                        setState(() => _orderHistory.removeAt(index));
-                        _saveData();
-                      } else if (val == 'whatsapp') {
-                        String msg = "*PEDIDO HISTÓRICO*\nCliente: ${order['client']}\nItems: $itemsSummary\nTotal: \$${order['total']}";
-                        _sendWhatsApp(customPhone: order['phone'], customMessage: msg);
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(value: 'edit', child: Text('Editar Pedido')),
-                      const PopupMenuItem(value: 'whatsapp', child: Text('Enviar a WhatsApp')),
-                      const PopupMenuItem(value: 'delete', child: Text('Eliminar Pedido')),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.edit, color: Colors.blue),
+                        onPressed: () => _loadOrderForEditing(index),
+                        tooltip: 'Editar Pedido',
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.send, color: Colors.green),
+                        onPressed: () {
+                          String msg = "*PEDIDO HISTÓRICO*\nCliente: ${order['client']}\nItems: $itemsSummary\nTotal: \$${order['total']}";
+                          _sendWhatsApp(customPhone: order['phone'], customMessage: msg);
+                        },
+                        tooltip: 'Enviar WhatsApp',
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        onPressed: () {
+                          setState(() => _orderHistory.removeAt(index));
+                          _saveData();
+                        },
+                        tooltip: 'Eliminar Pedido',
+                      ),
                     ],
                   ),
                 ),
@@ -563,18 +571,22 @@ class _MainScreenState extends State<MainScreen> {
                         child: ListTile(
                           title: Text(client['name']!, style: const TextStyle(fontWeight: FontWeight.bold)),
                           subtitle: Text(client['phone']!),
-                          trailing: PopupMenuButton<String>(
-                            onSelected: (value) {
-                              if (value == 'edit') {
-                                _showClientDialog(index: originalIndex);
-                              } else if (value == 'delete') {
-                                setState(() => _clients.removeAt(originalIndex));
-                                _saveData();
-                              }
-                            },
-                            itemBuilder: (context) => [
-                              const PopupMenuItem(value: 'edit', child: Text('Editar')),
-                              const PopupMenuItem(value: 'delete', child: Text('Eliminar')),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit, color: Colors.blue),
+                                onPressed: () => _showClientDialog(index: originalIndex),
+                                tooltip: 'Editar Cliente',
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete, color: Colors.red),
+                                onPressed: () {
+                                  setState(() => _clients.removeAt(originalIndex));
+                                  _saveData();
+                                },
+                                tooltip: 'Eliminar Cliente',
+                              ),
                             ],
                           ),
                         ),
@@ -666,21 +678,25 @@ class _MainScreenState extends State<MainScreen> {
                         child: ListTile(
                           title: Text(product['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
                           subtitle: Text('\$${(product['price'] as num).toStringAsFixed(2)}'),
-                          trailing: PopupMenuButton<String>(
-                            onSelected: (value) {
-                              if (value == 'edit') {
-                                _showProductDialog(index: originalIndex);
-                              } else if (value == 'delete') {
-                                setState(() {
-                                  _cart.remove(_products[originalIndex]['name']);
-                                  _products.removeAt(originalIndex);
-                                });
-                                _saveData();
-                              }
-                            },
-                            itemBuilder: (context) => [
-                              const PopupMenuItem(value: 'edit', child: Text('Editar')),
-                              const PopupMenuItem(value: 'delete', child: Text('Eliminar')),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit, color: Colors.blue),
+                                onPressed: () => _showProductDialog(index: originalIndex),
+                                tooltip: 'Editar Producto',
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete, color: Colors.red),
+                                onPressed: () {
+                                  setState(() {
+                                    _cart.remove(_products[originalIndex]['name']);
+                                    _products.removeAt(originalIndex);
+                                  });
+                                  _saveData();
+                                },
+                                tooltip: 'Eliminar Producto',
+                              ),
                             ],
                           ),
                         ),
