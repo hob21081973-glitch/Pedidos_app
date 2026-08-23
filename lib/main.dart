@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
@@ -35,78 +34,79 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
 
-  Contact? _selectedContact;
-  List<Contact> _phoneContacts = [];
-  List<Contact> _filteredContacts = [];
-  bool _isLoadingContacts = false;
-  String _searchQuery = '';
+  // Listas de datos locales
+  List<Map<String, String>> _clients = [
+    {'name': 'Juan Pérez', 'phone': '50432152136'},
+  ];
 
-  final Map<String, double> _products = {
-    'ABRILLANTADOR DE CALZADO 9 ML': 54.00,
-    'ACEITE BABY NUTRINE 150 ML': 65.00,
-  };
+  List<Map<String, dynamic>> _products = [
+    {'name': 'ABRILLANTADOR DE CALZADO 9 ML', 'price': 54.00},
+    {'name': 'ACEITE BABY NUTRINE 150 ML', 'price': 65.00},
+  ];
 
-  final Map<String, int> _cart = {
-    'ABRILLANTADOR DE CALZADO 9 ML': 0,
-    'ACEITE BABY NUTRINE 150 ML': 0,
-  };
-
+  Map<String, int> _cart = {};
+  Map<String, String>? _selectedClient;
   List<Map<String, dynamic>> _orderHistory = [];
 
   @override
   void initState() {
     super.initState();
-    _loadHistory();
+    _loadData();
   }
 
-  Future<void> _getPhoneContacts() async {
-    setState(() => _isLoadingContacts = true);
-    if (await FlutterContacts.requestPermission()) {
-      List<Contact> contacts = await FlutterContacts.getContacts(
-        withProperties: true,
-        withPhoto: false,
-      );
+  Future<void> _loadData() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    // Cargar historial
+    String? historyData = prefs.getString('order_history');
+    if (historyData != null) {
       setState(() {
-        _phoneContacts = contacts.where((c) => c.phones.isNotEmpty).toList();
-        _filteredContacts = _phoneContacts;
-        _isLoadingContacts = false;
+        _orderHistory = List<Map<String, dynamic>>.from(jsonDecode(historyData));
       });
-    } else {
-      setState(() => _isLoadingContacts = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Permiso de contactos denegado')),
+    }
+
+    // Cargar clientes
+    String? clientsData = prefs.getString('saved_clients');
+    if (clientsData != null) {
+      setState(() {
+        _clients = List<Map<String, String>>.from(
+          jsonDecode(clientsData).map((item) => Map<String, String>.from(item))
         );
-      }
+      });
+    }
+
+    // Cargar productos
+    String? productsData = prefs.getString('saved_products');
+    if (productsData != null) {
+      setState(() {
+        _products = List<Map<String, dynamic>>.from(jsonDecode(productsData));
+      });
+    }
+
+    // Inicializar carrito
+    for (var p in _products) {
+      _cart[p['name']] = 0;
     }
   }
 
-  void _filterContacts(String query) {
-    setState(() {
-      _searchQuery = query;
-      if (query.isEmpty) {
-        _filteredContacts = _phoneContacts;
-      } else {
-        _filteredContacts = _phoneContacts
-            .where((c) => c.displayName.toLowerCase().contains(query.toLowerCase()))
-            .toList();
-      }
-    });
+  Future<void> _saveData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('order_history', jsonEncode(_orderHistory));
+    await prefs.setString('saved_clients', jsonEncode(_clients));
+    await prefs.setString('saved_products', jsonEncode(_products));
   }
 
   double get _totalPrice {
     double total = 0;
-    _cart.forEach((product, qty) {
-      total += (_products[product] ?? 0) * qty;
+    _cart.forEach((productName, qty) {
+      var prod = _products.firstWhere((p) => p['name'] == productName, orElse: () => {'price': 0.0});
+      total += (prod['price'] as double) * qty;
     });
     return total;
   }
 
   String _generateOrderSummary() {
-    String clientName = _selectedContact != null 
-        ? _selectedContact!.displayName 
-        : 'Cliente No Especificado';
-        
+    String clientName = _selectedClient != null ? _selectedClient!['name']! : 'Cliente General';
     StringBuffer buffer = StringBuffer();
     buffer.writeln('*NUEVO PEDIDO*');
     buffer.writeln('Cliente: $clientName');
@@ -114,7 +114,8 @@ class _MainScreenState extends State<MainScreen> {
     
     _cart.forEach((product, qty) {
       if (qty > 0) {
-        double price = _products[product] ?? 0;
+        var prod = _products.firstWhere((p) => p['name'] == product);
+        double price = prod['price'];
         buffer.writeln('• $product x$qty = \$${(price * qty).toStringAsFixed(2)}');
       }
     });
@@ -125,15 +126,14 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _sendWhatsApp() async {
-    if (_selectedContact == null || _selectedContact!.phones.isEmpty) {
+    if (_selectedClient == null || _selectedClient!['phone']!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecciona un cliente de la agenda primero')),
+        const SnackBar(content: Text('Selecciona un cliente con número de teléfono')),
       );
       return;
     }
 
-    String phone = _selectedContact!.phones.first.number
-        .replaceAll(RegExp(r'[^\d+]'), '');
+    String phone = _selectedClient!['phone']!.replaceAll(RegExp(r'[^\d+]'), '');
     String text = Uri.encodeComponent(_generateOrderSummary());
     Uri url = Uri.parse("https://wa.me/$phone?text=$text");
 
@@ -150,101 +150,23 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _saveOrder() async {
-    final prefs = await SharedPreferences.getInstance();
     Map<String, dynamic> newOrder = {
-      'client': _selectedContact?.displayName ?? 'Cliente General',
+      'client': _selectedClient != null ? _selectedClient!['name']! : 'Cliente General',
       'date': DateTime.now().toIso8601String().substring(0, 10),
       'total': _totalPrice,
       'items': _cart.entries.where((e) => e.value > 0).map((e) => '${e.key} x${e.value}').toList(),
     };
 
-    _orderHistory.insert(0, newOrder);
-    await prefs.setString('order_history', jsonEncode(_orderHistory));
+    setState(() {
+      _orderHistory.insert(0, newOrder);
+    });
+    await _saveData();
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pedido guardado en el Historial con éxito')),
+        const SnackBar(content: Text('Pedido guardado en el Historial')),
       );
     }
-  }
-
-  Future<void> _loadHistory() async {
-    final prefs = await SharedPreferences.getInstance();
-    String? data = prefs.getString('order_history');
-    if (data != null) {
-      setState(() {
-        _orderHistory = List<Map<String, dynamic>>.from(jsonDecode(data));
-      });
-    }
-  }
-
-  void _showContactPicker() async {
-    await _getPhoneContacts();
-    if (!mounted) return;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setStateModal) {
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.75,
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  const Text('Seleccionar Cliente', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 10),
-                  TextField(
-                    decoration: const InputDecoration(
-                      labelText: 'Buscar en contactos...',
-                      prefixIcon: Icon(Icons.search),
-                      border: OutlineInputBorder(),
-                    ),
-                    onChanged: (value) {
-                      setStateModal(() {
-                        _searchQuery = value;
-                        if (value.isEmpty) {
-                          _filteredContacts = _phoneContacts;
-                        } else {
-                          _filteredContacts = _phoneContacts
-                              .where((c) => c.displayName.toLowerCase().contains(value.toLowerCase()))
-                              .toList();
-                        }
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  Expanded(
-                    child: _isLoadingContacts
-                        ? const Center(child: CircularProgressIndicator())
-                        : _filteredContacts.isEmpty
-                            ? const Center(child: Text('No se encontraron contactos'))
-                            : ListView.builder(
-                                itemCount: _filteredContacts.length,
-                                itemBuilder: (context, index) {
-                                  final contact = _filteredContacts[index];
-                                  final phone = contact.phones.isNotEmpty ? contact.phones.first.number : '';
-                                  return ListTile(
-                                    title: Text(contact.displayName),
-                                    subtitle: Text(phone),
-                                    onTap: () {
-                                      setState(() {
-                                        _selectedContact = contact;
-                                      });
-                                      Navigator.pop(context);
-                                    },
-                                  );
-                                },
-                              ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
   }
 
   @override
@@ -259,8 +181,8 @@ class _MainScreenState extends State<MainScreen> {
         children: [
           _buildNewOrderTab(),
           _buildHistoryTab(),
-          const Center(child: Text('Clientes')),
-          const Center(child: Text('Productos')),
+          _buildClientsTab(),
+          _buildProductsTab(),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
@@ -279,13 +201,14 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  // PESTAÑA NUEVO PEDIDO
   Widget _buildNewOrderTab() {
     return Column(
       children: [
         Padding(
           padding: const EdgeInsets.all(12.0),
           child: InkWell(
-            onTap: _showContactPicker,
+            onTap: _showClientSelectorDialog,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 15),
               decoration: BoxDecoration(
@@ -295,14 +218,11 @@ class _MainScreenState extends State<MainScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Expanded(
-                    child: Text(
-                      _selectedContact == null
-                          ? 'Buscar/Seleccionar Cliente de la Agenda'
-                          : '${_selectedContact!.displayName} (${_selectedContact!.phones.first.number})',
-                      style: const TextStyle(fontSize: 16),
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                  Text(
+                    _selectedClient == null
+                        ? 'Seleccionar Cliente'
+                        : '${_selectedClient!['name']} (${_selectedClient!['phone']})',
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   const Icon(Icons.arrow_drop_down),
                 ],
@@ -312,11 +232,12 @@ class _MainScreenState extends State<MainScreen> {
         ),
         Expanded(
           child: ListView(
-            children: _products.keys.map((productName) {
-              int qty = _cart[productName] ?? 0;
-              double price = _products[productName] ?? 0;
+            children: _products.map((product) {
+              String name = product['name'];
+              double price = product['price'];
+              int qty = _cart[name] ?? 0;
               return ListTile(
-                title: Text(productName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 subtitle: Text('\$${price.toStringAsFixed(2)}'),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -324,16 +245,14 @@ class _MainScreenState extends State<MainScreen> {
                     IconButton(
                       icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
                       onPressed: () {
-                        if (qty > 0) {
-                          setState(() => _cart[productName] = qty - 1);
-                        }
+                        if (qty > 0) setState(() => _cart[name] = qty - 1);
                       },
                     ),
                     Text('$qty', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                     IconButton(
                       icon: const Icon(Icons.add_circle_outline, color: Colors.green),
                       onPressed: () {
-                        setState(() => _cart[productName] = qty + 1);
+                        setState(() => _cart[name] = qty + 1);
                       },
                     ),
                   ],
@@ -379,6 +298,36 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
+  void _showClientSelectorDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Seleccionar Cliente'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: _clients.length,
+              itemBuilder: (context, index) {
+                var client = _clients[index];
+                return ListTile(
+                  title: Text(client['name']!),
+                  subtitle: Text(client['phone']!),
+                  onTap: () {
+                    setState(() => _selectedClient = client);
+                    Navigator.pop(context);
+                  },
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // PESTAÑA HISTORIAL
   Widget _buildHistoryTab() {
     return _orderHistory.isEmpty
         ? const Center(child: Text('No hay pedidos guardados.'))
@@ -396,5 +345,164 @@ class _MainScreenState extends State<MainScreen> {
               );
             },
           );
+  }
+
+  // PESTAÑA CLIENTES
+  Widget _buildClientsTab() {
+    return Scaffold(
+      body: ListView.builder(
+        itemCount: _clients.length,
+        itemBuilder: (context, index) {
+          var client = _clients[index];
+          return ListTile(
+            title: Text(client['name']!, style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text(client['phone']!),
+            trailing: PopupMenuButton<String>(
+              onSelected: (value) {
+                if (value == 'edit') {
+                  _showClientDialog(index: index);
+                } else if (value == 'delete') {
+                  setState(() => _clients.removeAt(index));
+                  _saveData();
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'edit', child: Text('Editar')),
+                const PopupMenuItem(value: 'delete', child: Text('Eliminar')),
+              ],
+            ),
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: Colors.green[700],
+        onPressed: () => _showClientDialog(),
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  void _showClientDialog({int? index}) {
+    TextEditingController nameController = TextEditingController(text: index != null ? _clients[index]['name'] : '');
+    TextEditingController phoneController = TextEditingController(text: index != null ? _clients[index]['phone'] : '');
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(index == null ? 'Nuevo Cliente' : 'Editar Cliente'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Nombre del cliente')),
+              TextField(controller: phoneController, decoration: const InputDecoration(labelText: 'Teléfono (WhatsApp)'), keyboardType: TextInputType.phone),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+            ElevatedButton(
+              onPressed: () {
+                if (nameController.text.isNotEmpty) {
+                  setState(() {
+                    if (index == null) {
+                      _clients.add({'name': nameController.text, 'phone': phoneController.text});
+                    } else {
+                      _clients[index] = {'name': nameController.text, 'phone': phoneController.text};
+                    }
+                  });
+                  _saveData();
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // PESTAÑA PRODUCTOS
+  Widget _buildProductsTab() {
+    return Scaffold(
+      body: ListView.builder(
+        itemCount: _products.length,
+        itemBuilder: (context, index) {
+          var product = _products[index];
+          return ListTile(
+            title: Text(product['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text('\$${(product['price'] as double).toStringAsFixed(2)}'),
+            trailing: PopupMenuButton<String>(
+              onSelected: (value) {
+                if (value == 'edit') {
+                  _showProductDialog(index: index);
+                } else if (value == 'delete') {
+                  setState(() {
+                    _cart.remove(_products[index]['name']);
+                    _products.removeAt(index);
+                  });
+                  _saveData();
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(value: 'edit', child: Text('Editar')),
+                const PopupMenuItem(value: 'delete', child: Text('Eliminar')),
+              ],
+            ),
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: Colors.green[700],
+        onPressed: () => _showProductDialog(),
+        child: const Icon(Icons.add),
+      ),
+    );
+  }
+
+  void _showProductDialog({int? index}) {
+    TextEditingController nameController = TextEditingController(text: index != null ? _products[index]['name'] : '');
+    TextEditingController priceController = TextEditingController(text: index != null ? _products[index]['price'].toString() : '');
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(index == null ? 'Nuevo Producto' : 'Editar Producto'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Nombre del producto')),
+              TextField(controller: priceController, decoration: const InputDecoration(labelText: 'Precio'), keyboardType: TextInputType.number),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+            ElevatedButton(
+              onPressed: () {
+                if (nameController.text.isNotEmpty && priceController.text.isNotEmpty) {
+                  double price = double.tryParse(priceController.text) ?? 0.0;
+                  setState(() {
+                    if (index == null) {
+                      _products.add({'name': nameController.text, 'price': price});
+                      _cart[nameController.text] = 0;
+                    } else {
+                      String oldName = _products[index]['name'];
+                      int oldQty = _cart[oldName] ?? 0;
+                      _cart.remove(oldName);
+                      _products[index] = {'name': nameController.text, 'price': price};
+                      _cart[nameController.text] = oldQty;
+                    }
+                  });
+                  _saveData();
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Guardar'),
+            ),
+          ],
+        );
+      },
+    );
   }
 }
