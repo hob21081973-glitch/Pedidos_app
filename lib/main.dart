@@ -614,7 +614,7 @@ class _MainScreenState extends State<MainScreen> {
         return AlertDialog(
           title: Text(index == null ? 'Nuevo Cliente' : 'Editar Cliente'),
           content: Column(
-            mainAxisSize: FullTextEditingOption ?? MainAxisSize.min,
+            mainAxisSize: MainAxisSize.min,
             children: [
               TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Nombre del cliente')),
               TextField(controller: phoneController, decoration: const InputDecoration(labelText: 'Teléfono (WhatsApp)'), keyboardType: TextInputType.phone),
