@@ -1,6 +1,8 @@
 name: pedidos_app
-description: Aplicacion de gestión de pedidos
+description: Sistema de Pedidos
+
 publish_to: 'none'
+
 version: 1.0.0+1
 
 environment:
@@ -11,5 +13,13 @@ dependencies:
     sdk: flutter
   shared_preferences: ^2.2.2
   url_launcher: ^6.2.5
-  excel: ^4.0.3        # Para leer el archivo .xlsx
-  file_picker: ^8.0.0  # Para abrir el explorador y seleccionar el archivo
+  file_picker: ^8.0.0
+  csv: ^6.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
