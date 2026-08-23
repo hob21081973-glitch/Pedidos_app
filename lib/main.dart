@@ -35,10 +35,11 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
 
-  // Contacto seleccionado y carrito
   Contact? _selectedContact;
   List<Contact> _phoneContacts = [];
+  List<Contact> _filteredContacts = [];
   bool _isLoadingContacts = false;
+  String _searchQuery = '';
 
   final Map<String, double> _products = {
     'ABRILLANTADOR DE CALZADO 9 ML': 54.00,
@@ -46,8 +47,8 @@ class _MainScreenState extends State<MainScreen> {
   };
 
   final Map<String, int> _cart = {
-    'ABRILLANTADOR DE CALZADO 9 ML': 3,
-    'ACEITE BABY NUTRINE 150 ML': 3,
+    'ABRILLANTADOR DE CALZADO 9 ML': 0,
+    'ACEITE BABY NUTRINE 150 ML': 0,
   };
 
   List<Map<String, dynamic>> _orderHistory = [];
@@ -58,7 +59,6 @@ class _MainScreenState extends State<MainScreen> {
     _loadHistory();
   }
 
-  // Cargar contactos del teléfono
   Future<void> _getPhoneContacts() async {
     setState(() => _isLoadingContacts = true);
     if (await FlutterContacts.requestPermission()) {
@@ -68,6 +68,7 @@ class _MainScreenState extends State<MainScreen> {
       );
       setState(() {
         _phoneContacts = contacts.where((c) => c.phones.isNotEmpty).toList();
+        _filteredContacts = _phoneContacts;
         _isLoadingContacts = false;
       });
     } else {
@@ -78,6 +79,19 @@ class _MainScreenState extends State<MainScreen> {
         );
       }
     }
+  }
+
+  void _filterContacts(String query) {
+    setState(() {
+      _searchQuery = query;
+      if (query.isEmpty) {
+        _filteredContacts = _phoneContacts;
+      } else {
+        _filteredContacts = _phoneContacts
+            .where((c) => c.displayName.toLowerCase().contains(query.toLowerCase()))
+            .toList();
+      }
+    });
   }
 
   double get _totalPrice {
@@ -113,7 +127,7 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _sendWhatsApp() async {
     if (_selectedContact == null || _selectedContact!.phones.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecciona un cliente con número válido')),
+        const SnackBar(content: Text('Selecciona un cliente de la agenda primero')),
       );
       return;
     }
@@ -138,7 +152,7 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _saveOrder() async {
     final prefs = await SharedPreferences.getInstance();
     Map<String, dynamic> newOrder = {
-      'client': _selectedContact?.displayName ?? 'Cliente',
+      'client': _selectedContact?.displayName ?? 'Cliente General',
       'date': DateTime.now().toIso8601String().substring(0, 10),
       'total': _totalPrice,
       'items': _cart.entries.where((e) => e.value > 0).map((e) => '${e.key} x${e.value}').toList(),
@@ -149,7 +163,7 @@ class _MainScreenState extends State<MainScreen> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pedido guardado con éxito')),
+        const SnackBar(content: Text('Pedido guardado en el Historial con éxito')),
       );
     }
   }
@@ -170,26 +184,65 @@ class _MainScreenState extends State<MainScreen> {
 
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       builder: (context) {
-        return _isLoadingContacts
-            ? const Center(child: CircularProgressIndicator())
-            : ListView.builder(
-                itemCount: _phoneContacts.length,
-                itemBuilder: (context, index) {
-                  final contact = _phoneContacts[index];
-                  final phone = contact.phones.isNotEmpty ? contact.phones.first.number : '';
-                  return ListTile(
-                    title: Text(contact.displayName),
-                    subtitle: Text(phone),
-                    onTap: () {
-                      setState(() {
-                        _selectedContact = contact;
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setStateModal) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.75,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  const Text('Seleccionar Cliente', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
+                  TextField(
+                    decoration: const InputDecoration(
+                      labelText: 'Buscar en contactos...',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) {
+                      setStateModal(() {
+                        _searchQuery = value;
+                        if (value.isEmpty) {
+                          _filteredContacts = _phoneContacts;
+                        } else {
+                          _filteredContacts = _phoneContacts
+                              .where((c) => c.displayName.toLowerCase().contains(value.toLowerCase()))
+                              .toList();
+                        }
                       });
-                      Navigator.pop(context);
                     },
-                  );
-                },
-              );
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: _isLoadingContacts
+                        ? const Center(child: CircularProgressIndicator())
+                        : _filteredContacts.isEmpty
+                            ? const Center(child: Text('No se encontraron contactos'))
+                            : ListView.builder(
+                                itemCount: _filteredContacts.length,
+                                itemBuilder: (context, index) {
+                                  final contact = _filteredContacts[index];
+                                  final phone = contact.phones.isNotEmpty ? contact.phones.first.number : '';
+                                  return ListTile(
+                                    title: Text(contact.displayName),
+                                    subtitle: Text(phone),
+                                    onTap: () {
+                                      setState(() {
+                                        _selectedContact = contact;
+                                      });
+                                      Navigator.pop(context);
+                                    },
+                                  );
+                                },
+                              ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
       },
     );
   }
@@ -242,11 +295,14 @@ class _MainScreenState extends State<MainScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    _selectedContact == null
-                        ? 'Buscar/Seleccionar Cliente de la Agenda'
-                        : '${_selectedContact!.displayName} (${_selectedContact!.phones.first.number})',
-                    style: const TextStyle(fontSize: 16),
+                  Expanded(
+                    child: Text(
+                      _selectedContact == null
+                          ? 'Buscar/Seleccionar Cliente de la Agenda'
+                          : '${_selectedContact!.displayName} (${_selectedContact!.phones.first.number})',
+                      style: const TextStyle(fontSize: 16),
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   const Icon(Icons.arrow_drop_down),
                 ],
