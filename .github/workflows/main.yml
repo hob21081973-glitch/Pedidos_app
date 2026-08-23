@@ -22,10 +22,13 @@ jobs:
       with:
         channel: 'stable'
 
-    - name: Recreate Android project
+    - name: Clean and create Android project
       run: |
         rm -rf android
         flutter create . --platforms=android --org com.example
+
+    - name: Get Dependencies
+      run: flutter pub get
 
     - name: Build APK
       run: flutter build apk --release
