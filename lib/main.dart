@@ -47,7 +47,6 @@ class _MainScreenState extends State<MainScreen> {
   Map<String, String>? _selectedClient;
   List<Map<String, dynamic>> _orderHistory = [];
 
-  // Buscadores
   final TextEditingController _orderSearchController = TextEditingController();
   final TextEditingController _clientSearchController = TextEditingController();
   final TextEditingController _productSearchController = TextEditingController();
@@ -68,23 +67,24 @@ class _MainScreenState extends State<MainScreen> {
     String? historyData = prefs.getString('order_history');
     if (historyData != null) {
       setState(() {
-        _orderHistory = List<Map<String, dynamic>>.from(jsonDecode(historyData));
+        List<dynamic> list = jsonDecode(historyData);
+        _orderHistory = list.map((item) => Map<String, dynamic>.from(item)).toList();
       });
     }
 
     String? clientsData = prefs.getString('saved_clients');
     if (clientsData != null) {
       setState(() {
-        _clients = List<Map<String, String>>.from(
-          jsonDecode(clientsData).map((item) => Map<String, String>.from(item))
-        );
+        List<dynamic> list = jsonDecode(clientsData);
+        _clients = list.map((item) => Map<String, String>.from(item as Map)).toList();
       });
     }
 
     String? productsData = prefs.getString('saved_products');
     if (productsData != null) {
       setState(() {
-        _products = List<Map<String, dynamic>>.from(jsonDecode(productsData));
+        List<dynamic> list = jsonDecode(productsData);
+        _products = list.map((item) => Map<String, dynamic>.from(item)).toList();
       });
     }
 
@@ -209,19 +209,15 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  // PESTAÑA NUEVO PEDIDO
   Widget _buildNewOrderTab() {
-    // Filtrar productos para el autocompletado
     final searchResults = _orderSearchQuery.isEmpty
         ? []
         : _products.where((p) => p['name'].toString().toLowerCase().contains(_orderSearchQuery.toLowerCase())).toList();
 
-    // Productos agregados al pedido
     final selectedProducts = _products.where((p) => (_cart[p['name']] ?? 0) > 0).toList();
 
     return Column(
       children: [
-        // Selector de Cliente
         Padding(
           padding: const EdgeInsets.all(8.0),
           child: InkWell(
@@ -250,8 +246,6 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ),
         ),
-
-        // Buscador de productos
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8.0),
           child: TextField(
@@ -280,11 +274,9 @@ class _MainScreenState extends State<MainScreen> {
             },
           ),
         ),
-
-        // Desplegable de resultados de búsqueda
         if (_orderSearchQuery.isNotEmpty)
           Container(
-            maxHeight: 180,
+            constraints: const BoxConstraints(maxHeight: 180),
             margin: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: Colors.white,
@@ -318,10 +310,7 @@ class _MainScreenState extends State<MainScreen> {
                     },
                   ),
           ),
-
         const SizedBox(height: 8),
-
-        // Lista de productos seleccionados
         Expanded(
           child: selectedProducts.isEmpty
               ? const Center(
@@ -373,8 +362,6 @@ class _MainScreenState extends State<MainScreen> {
                   },
                 ),
         ),
-
-        // Total y Botones
         Container(
           padding: const EdgeInsets.all(12),
           color: Colors.grey.shade100,
@@ -444,7 +431,6 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  // PESTAÑA HISTORIAL
   Widget _buildHistoryTab() {
     return _orderHistory.isEmpty
         ? const Center(child: Text('No hay pedidos guardados.'))
@@ -464,7 +450,6 @@ class _MainScreenState extends State<MainScreen> {
           );
   }
 
-  // PESTAÑA CLIENTES
   Widget _buildClientsTab() {
     final filteredClients = _clients.where((c) {
       return c['name']!.toLowerCase().contains(_clientSearchQuery.toLowerCase()) ||
@@ -570,7 +555,6 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  // PESTAÑA PRODUCTOS
   Widget _buildProductsTab() {
     final filteredProducts = _products.where((p) {
       return p['name'].toString().toLowerCase().contains(_productSearchQuery.toLowerCase());
