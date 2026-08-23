@@ -2,9 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
-import 'dart:io';
-import 'package:file_picker/file_picker.dart';
-import 'package:csv/csv.dart';
 
 void main() {
   runApp(const MyApp());
@@ -109,60 +106,6 @@ class _MainScreenState extends State<MainScreen> {
     await prefs.setString('saved_products', jsonEncode(_products));
   }
 
-  Future<void> _importCSV() async {
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.any,
-      );
-
-      if (result != null && result.files.single.path != null) {
-        final input = File(result.files.single.path!).openRead();
-        final fields = await input
-            .transform(utf8.decoder)
-            .transform(const CsvToListConverter())
-            .toList();
-
-        int importedCount = 0;
-
-        for (var row in fields.skip(1)) {
-          if (row.length >= 2) {
-            String col0 = row[0].toString().trim();
-            String col1 = row[1].toString().trim();
-
-            double? price = double.tryParse(col1.replaceAll('L', '').replaceAll('\$', '').trim());
-
-            if (price != null && col0.isNotEmpty) {
-              _products.removeWhere((p) => p['name'].toString().toLowerCase() == col0.toLowerCase());
-              _products.add({'name': col0, 'price': price});
-              importedCount++;
-            } else if (col0.isNotEmpty && col1.isNotEmpty) {
-              _clients.removeWhere((c) => c['name']!.toLowerCase() == col0.toLowerCase());
-              _clients.add({'name': col0, 'phone': col1});
-              importedCount++;
-            }
-          }
-        }
-
-        setState(() {
-          _resetCart();
-        });
-        await _saveData();
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('¡Éxito! Se importaron $importedCount registros.')),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cargar archivo: $e')),
-        );
-      }
-    }
-  }
-
   double get _totalPrice {
     double total = 0;
     _cart.forEach((productName, qty) {
@@ -254,7 +197,7 @@ class _MainScreenState extends State<MainScreen> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pedido procesado y guardado con éxito.')),
+        const SnackBar(content: Text('Pedido guardado con éxito.')),
       );
     }
   }
@@ -317,11 +260,6 @@ class _MainScreenState extends State<MainScreen> {
         title: Text(_editingOrderIndex != null ? 'Editando Pedido' : 'Sistema de Pedidos'),
         backgroundColor: Colors.green[700],
         actions: [
-          IconButton(
-            icon: const Icon(Icons.file_upload),
-            tooltip: 'Importar Datos (CSV)',
-            onPressed: _importCSV,
-          ),
           if (_editingOrderIndex != null)
             IconButton(
               icon: const Icon(Icons.cancel),
