@@ -47,9 +47,14 @@ class _MainScreenState extends State<MainScreen> {
   Map<String, String>? _selectedClient;
   List<Map<String, dynamic>> _orderHistory = [];
 
-  // Controlador de búsqueda de productos
-  TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
+  // Buscadores
+  final TextEditingController _orderSearchController = TextEditingController();
+  final TextEditingController _clientSearchController = TextEditingController();
+  final TextEditingController _productSearchController = TextEditingController();
+
+  String _orderSearchQuery = '';
+  String _clientSearchQuery = '';
+  String _productSearchQuery = '';
 
   @override
   void initState() {
@@ -206,15 +211,19 @@ class _MainScreenState extends State<MainScreen> {
 
   // PESTAÑA NUEVO PEDIDO
   Widget _buildNewOrderTab() {
-    final filteredProducts = _products.where((product) {
-      return product['name'].toString().toLowerCase().contains(_searchQuery.toLowerCase());
-    }).toList();
+    // Filtrar productos para el autocompletado
+    final searchResults = _orderSearchQuery.isEmpty
+        ? []
+        : _products.where((p) => p['name'].toString().toLowerCase().contains(_orderSearchQuery.toLowerCase())).toList();
+
+    // Productos agregados al pedido
+    final selectedProducts = _products.where((p) => (_cart[p['name']] ?? 0) > 0).toList();
 
     return Column(
       children: [
         // Selector de Cliente
         Padding(
-          padding: const EdgeInsets.all(10.0),
+          padding: const EdgeInsets.all(8.0),
           child: InkWell(
             onTap: _showClientSelectorDialog,
             child: Container(
@@ -231,7 +240,7 @@ class _MainScreenState extends State<MainScreen> {
                       _selectedClient == null
                           ? 'Seleccionar Cliente'
                           : '${_selectedClient!['name']} (${_selectedClient!['phone']})',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -244,66 +253,115 @@ class _MainScreenState extends State<MainScreen> {
 
         // Buscador de productos
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10.0),
+          padding: const EdgeInsets.symmetric(horizontal: 8.0),
           child: TextField(
-            controller: _searchController,
+            controller: _orderSearchController,
             decoration: InputDecoration(
-              hintText: 'Buscar producto...',
+              hintText: 'Buscar y agregar producto...',
               prefixIcon: const Icon(Icons.search),
-              suffixIcon: _searchQuery.isNotEmpty
+              suffixIcon: _orderSearchQuery.isNotEmpty
                   ? IconButton(
                       icon: const Icon(Icons.clear),
                       onPressed: () {
                         setState(() {
-                          _searchController.clear();
-                          _searchQuery = '';
+                          _orderSearchController.clear();
+                          _orderSearchQuery = '';
                         });
                       },
                     )
                   : null,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
             ),
             onChanged: (value) {
               setState(() {
-                _searchQuery = value;
+                _orderSearchQuery = value;
               });
             },
           ),
         ),
+
+        // Desplegable de resultados de búsqueda
+        if (_orderSearchQuery.isNotEmpty)
+          Container(
+            maxHeight: 180,
+            margin: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: Colors.green),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: searchResults.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.all(8.0),
+                    child: Text('Sin coincidencias'),
+                  )
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: searchResults.length,
+                    itemBuilder: (context, index) {
+                      var prod = searchResults[index];
+                      return ListTile(
+                        dense: true,
+                        title: Text(prod['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text('\$${(prod['price'] as num).toStringAsFixed(2)}'),
+                        trailing: const Icon(Icons.add, color: Colors.green),
+                        onTap: () {
+                          setState(() {
+                            String pName = prod['name'];
+                            _cart[pName] = (_cart[pName] ?? 0) + 1;
+                            _orderSearchController.clear();
+                            _orderSearchQuery = '';
+                          });
+                        },
+                      );
+                    },
+                  ),
+          ),
+
         const SizedBox(height: 8),
 
-        // Lista de Productos filtrada
+        // Lista de productos seleccionados
         Expanded(
-          child: filteredProducts.isEmpty
-              ? const Center(child: Text('No se encontraron productos.'))
+          child: selectedProducts.isEmpty
+              ? const Center(
+                  child: Text(
+                    'Usa el buscador arriba para agregar productos.',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                )
               : ListView.builder(
-                  itemCount: filteredProducts.length,
+                  itemCount: selectedProducts.length,
                   itemBuilder: (context, index) {
-                    var product = filteredProducts[index];
+                    var product = selectedProducts[index];
                     String name = product['name'];
                     double price = (product['price'] as num).toDouble();
                     int qty = _cart[name] ?? 0;
 
                     return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      child: ListTile(
-                        title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                        subtitle: Text('\$${price.toStringAsFixed(2)}'),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
+                      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        child: Row(
                           children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                                  Text('\$${price.toStringAsFixed(2)}', style: const TextStyle(color: Colors.grey)),
+                                ],
+                              ),
+                            ),
                             IconButton(
-                              icon: const Icon(Icons.remove_circle, color: Colors.red),
+                              icon: const Icon(Icons.remove_circle_outline, color: Colors.red, size: 28),
                               onPressed: () {
                                 if (qty > 0) setState(() => _cart[name] = qty - 1);
                               },
                             ),
                             Text('$qty', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                             IconButton(
-                              icon: const Icon(Icons.add_circle, color: Colors.green),
+                              icon: const Icon(Icons.add_circle_outline, color: Colors.green, size: 28),
                               onPressed: () {
                                 setState(() => _cart[name] = qty + 1);
                               },
@@ -331,7 +389,7 @@ class _MainScreenState extends State<MainScreen> {
                 children: [
                   Expanded(
                     child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, padding: const EdgeInsets.all(12)),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, padding: const EdgeInsets.all(10)),
                       onPressed: _saveOrder,
                       icon: const Icon(Icons.save, color: Colors.white),
                       label: const Text('Guardar', style: TextStyle(color: Colors.white)),
@@ -340,7 +398,7 @@ class _MainScreenState extends State<MainScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green[600], padding: const EdgeInsets.all(12)),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green[600], padding: const EdgeInsets.all(10)),
                       onPressed: _sendWhatsApp,
                       icon: const Icon(Icons.send, color: Colors.white),
                       label: const Text('Enviar Pedido', style: TextStyle(color: Colors.white)),
@@ -408,38 +466,62 @@ class _MainScreenState extends State<MainScreen> {
 
   // PESTAÑA CLIENTES
   Widget _buildClientsTab() {
+    final filteredClients = _clients.where((c) {
+      return c['name']!.toLowerCase().contains(_clientSearchQuery.toLowerCase()) ||
+          c['phone']!.contains(_clientSearchQuery);
+    }).toList();
+
     return Scaffold(
-      body: _clients.isEmpty
-          ? const Center(child: Text('No hay clientes registrados.'))
-          : ListView.builder(
-              itemCount: _clients.length,
-              itemBuilder: (context, index) {
-                var client = _clients[index];
-                return Card(
-                  margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  child: ListTile(
-                    title: Text(client['name']!, style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text(client['phone']!),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit, color: Colors.blue),
-                          onPressed: () => _showClientDialog(index: index),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          onPressed: () {
-                            setState(() => _clients.removeAt(index));
-                            _saveData();
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: TextField(
+              controller: _clientSearchController,
+              decoration: InputDecoration(
+                hintText: 'Buscar cliente...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
+              ),
+              onChanged: (val) => setState(() => _clientSearchQuery = val),
             ),
+          ),
+          Expanded(
+            child: filteredClients.isEmpty
+                ? const Center(child: Text('No hay clientes.'))
+                : ListView.builder(
+                    itemCount: filteredClients.length,
+                    itemBuilder: (context, index) {
+                      var client = filteredClients[index];
+                      int originalIndex = _clients.indexOf(client);
+                      return Card(
+                        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        child: ListTile(
+                          title: Text(client['name']!, style: const TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle: Text(client['phone']!),
+                          trailing: PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert),
+                            onSelected: (value) {
+                              if (value == 'edit') {
+                                _showClientDialog(index: originalIndex);
+                              } else if (value == 'delete') {
+                                setState(() => _clients.removeAt(originalIndex));
+                                _saveData();
+                              }
+                            },
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(value: 'edit', child: Text('Editar')),
+                              const PopupMenuItem(value: 'delete', child: Text('Eliminar')),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: Colors.green[700],
         onPressed: () => _showClientDialog(),
@@ -490,42 +572,65 @@ class _MainScreenState extends State<MainScreen> {
 
   // PESTAÑA PRODUCTOS
   Widget _buildProductsTab() {
+    final filteredProducts = _products.where((p) {
+      return p['name'].toString().toLowerCase().contains(_productSearchQuery.toLowerCase());
+    }).toList();
+
     return Scaffold(
-      body: _products.isEmpty
-          ? const Center(child: Text('No hay productos registrados.'))
-          : ListView.builder(
-              itemCount: _products.length,
-              itemBuilder: (context, index) {
-                var product = _products[index];
-                double price = (product['price'] as num).toDouble();
-                return Card(
-                  margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  child: ListTile(
-                    title: Text(product['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('\$${price.toStringAsFixed(2)}'),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit, color: Colors.blue),
-                          onPressed: () => _showProductDialog(index: index),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete, color: Colors.red),
-                          onPressed: () {
-                            setState(() {
-                              _cart.remove(_products[index]['name']);
-                              _products.removeAt(index);
-                            });
-                            _saveData();
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: TextField(
+              controller: _productSearchController,
+              decoration: InputDecoration(
+                hintText: 'Buscar producto...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
+              ),
+              onChanged: (val) => setState(() => _productSearchQuery = val),
             ),
+          ),
+          Expanded(
+            child: filteredProducts.isEmpty
+                ? const Center(child: Text('No hay productos.'))
+                : ListView.builder(
+                    itemCount: filteredProducts.length,
+                    itemBuilder: (context, index) {
+                      var product = filteredProducts[index];
+                      int originalIndex = _products.indexOf(product);
+                      double price = (product['price'] as num).toDouble();
+                      return Card(
+                        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        child: ListTile(
+                          title: Text(product['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                          subtitle: Text('\$${price.toStringAsFixed(2)}'),
+                          trailing: PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert),
+                            onSelected: (value) {
+                              if (value == 'edit') {
+                                _showProductDialog(index: originalIndex);
+                              } else if (value == 'delete') {
+                                setState(() {
+                                  _cart.remove(_products[originalIndex]['name']);
+                                  _products.removeAt(originalIndex);
+                                });
+                                _saveData();
+                              }
+                            },
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(value: 'edit', child: Text('Editar')),
+                              const PopupMenuItem(value: 'delete', child: Text('Eliminar')),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         backgroundColor: Colors.green[700],
         onPressed: () => _showProductDialog(),
