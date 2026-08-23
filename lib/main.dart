@@ -47,6 +47,10 @@ class _MainScreenState extends State<MainScreen> {
   Map<String, String>? _selectedClient;
   List<Map<String, dynamic>> _orderHistory = [];
 
+  // Controlador de búsqueda de productos
+  TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
   @override
   void initState() {
     super.initState();
@@ -56,7 +60,6 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _loadData() async {
     final prefs = await SharedPreferences.getInstance();
     
-    // Cargar historial
     String? historyData = prefs.getString('order_history');
     if (historyData != null) {
       setState(() {
@@ -64,7 +67,6 @@ class _MainScreenState extends State<MainScreen> {
       });
     }
 
-    // Cargar clientes
     String? clientsData = prefs.getString('saved_clients');
     if (clientsData != null) {
       setState(() {
@@ -74,7 +76,6 @@ class _MainScreenState extends State<MainScreen> {
       });
     }
 
-    // Cargar productos
     String? productsData = prefs.getString('saved_products');
     if (productsData != null) {
       setState(() {
@@ -82,7 +83,6 @@ class _MainScreenState extends State<MainScreen> {
       });
     }
 
-    // Inicializar carrito
     for (var p in _products) {
       _cart[p['name']] = 0;
     }
@@ -206,17 +206,22 @@ class _MainScreenState extends State<MainScreen> {
 
   // PESTAÑA NUEVO PEDIDO
   Widget _buildNewOrderTab() {
+    final filteredProducts = _products.where((product) {
+      return product['name'].toString().toLowerCase().contains(_searchQuery.toLowerCase());
+    }).toList();
+
     return Column(
       children: [
+        // Selector de Cliente
         Padding(
-          padding: const EdgeInsets.all(12.0),
+          padding: const EdgeInsets.all(10.0),
           child: InkWell(
             onTap: _showClientSelectorDialog,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 15),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               decoration: BoxDecoration(
                 border: Border.all(color: Colors.grey.shade400),
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -236,63 +241,109 @@ class _MainScreenState extends State<MainScreen> {
             ),
           ),
         ),
-        Expanded(
-          child: ListView(
-            children: _products.map((product) {
-              String name = product['name'];
-              double price = (product['price'] as num).toDouble();
-              int qty = _cart[name] ?? 0;
-              return ListTile(
-                title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                subtitle: Text('\$${price.toStringAsFixed(2)}'),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.remove_circle_outline, color: Colors.red),
+
+        // Buscador de productos
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10.0),
+          child: TextField(
+            controller: _searchController,
+            decoration: InputDecoration(
+              hintText: 'Buscar producto...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchQuery.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
                       onPressed: () {
-                        if (qty > 0) setState(() => _cart[name] = qty - 1);
+                        setState(() {
+                          _searchController.clear();
+                          _searchQuery = '';
+                        });
                       },
-                    ),
-                    Text('$qty', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                    IconButton(
-                      icon: const Icon(Icons.add_circle_outline, color: Colors.green),
-                      onPressed: () {
-                        setState(() => _cart[name] = qty + 1);
-                      },
-                    ),
-                  ],
-                ),
-              );
-            }).toList(),
+                    )
+                  : null,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
+            ),
+            onChanged: (value) {
+              setState(() {
+                _searchQuery = value;
+              });
+            },
           ),
         ),
+        const SizedBox(height: 8),
+
+        // Lista de Productos filtrada
+        Expanded(
+          child: filteredProducts.isEmpty
+              ? const Center(child: Text('No se encontraron productos.'))
+              : ListView.builder(
+                  itemCount: filteredProducts.length,
+                  itemBuilder: (context, index) {
+                    var product = filteredProducts[index];
+                    String name = product['name'];
+                    double price = (product['price'] as num).toDouble();
+                    int qty = _cart[name] ?? 0;
+
+                    return Card(
+                      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      child: ListTile(
+                        title: Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                        subtitle: Text('\$${price.toStringAsFixed(2)}'),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.remove_circle, color: Colors.red),
+                              onPressed: () {
+                                if (qty > 0) setState(() => _cart[name] = qty - 1);
+                              },
+                            ),
+                            Text('$qty', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                            IconButton(
+                              icon: const Icon(Icons.add_circle, color: Colors.green),
+                              onPressed: () {
+                                setState(() => _cart[name] = qty + 1);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+
+        // Total y Botones
         Container(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(12),
+          color: Colors.grey.shade100,
           child: Column(
             children: [
               Text(
                 'TOTAL: \$${_totalPrice.toStringAsFixed(2)}',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green[800]),
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.green[800]),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.blue, padding: const EdgeInsets.all(12)),
                       onPressed: _saveOrder,
-                      icon: const Icon(Icons.save),
-                      label: const Text('Guardar'),
+                      icon: const Icon(Icons.save, color: Colors.white),
+                      label: const Text('Guardar', style: TextStyle(color: Colors.white)),
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: ElevatedButton.icon(
                       style: ElevatedButton.styleFrom(backgroundColor: Colors.green[600], padding: const EdgeInsets.all(12)),
                       onPressed: _sendWhatsApp,
-                      icon: const Icon(Icons.send),
-                      label: const Text('Enviar Pedido'),
+                      icon: const Icon(Icons.send, color: Colors.white),
+                      label: const Text('Enviar Pedido', style: TextStyle(color: Colors.white)),
                     ),
                   ),
                 ],
@@ -364,22 +415,27 @@ class _MainScreenState extends State<MainScreen> {
               itemCount: _clients.length,
               itemBuilder: (context, index) {
                 var client = _clients[index];
-                return ListTile(
-                  title: Text(client['name']!, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text(client['phone']!),
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (value) {
-                      if (value == 'edit') {
-                        _showClientDialog(index: index);
-                      } else if (value == 'delete') {
-                        setState(() => _clients.removeAt(index));
-                        _saveData();
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(value: 'edit', child: Text('Editar')),
-                      const PopupMenuItem(value: 'delete', child: Text('Eliminar')),
-                    ],
+                return Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  child: ListTile(
+                    title: Text(client['name']!, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text(client['phone']!),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit, color: Colors.blue),
+                          onPressed: () => _showClientDialog(index: index),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () {
+                            setState(() => _clients.removeAt(index));
+                            _saveData();
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },
@@ -387,7 +443,7 @@ class _MainScreenState extends State<MainScreen> {
       floatingActionButton: FloatingActionButton(
         backgroundColor: Colors.green[700],
         onPressed: () => _showClientDialog(),
-        child: const Icon(Icons.add),
+        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
@@ -442,25 +498,30 @@ class _MainScreenState extends State<MainScreen> {
               itemBuilder: (context, index) {
                 var product = _products[index];
                 double price = (product['price'] as num).toDouble();
-                return ListTile(
-                  title: Text(product['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text('\$${price.toStringAsFixed(2)}'),
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (value) {
-                      if (value == 'edit') {
-                        _showProductDialog(index: index);
-                      } else if (value == 'delete') {
-                        setState(() {
-                          _cart.remove(_products[index]['name']);
-                          _products.removeAt(index);
-                        });
-                        _saveData();
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      const PopupMenuItem(value: 'edit', child: Text('Editar')),
-                      const PopupMenuItem(value: 'delete', child: Text('Eliminar')),
-                    ],
+                return Card(
+                  margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  child: ListTile(
+                    title: Text(product['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text('\$${price.toStringAsFixed(2)}'),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit, color: Colors.blue),
+                          onPressed: () => _showProductDialog(index: index),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () {
+                            setState(() {
+                              _cart.remove(_products[index]['name']);
+                              _products.removeAt(index);
+                            });
+                            _saveData();
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 );
               },
@@ -468,7 +529,7 @@ class _MainScreenState extends State<MainScreen> {
       floatingActionButton: FloatingActionButton(
         backgroundColor: Colors.green[700],
         onPressed: () => _showProductDialog(),
-        child: const Icon(Icons.add),
+        child: const Icon(Icons.add, color: Colors.white),
       ),
     );
   }
