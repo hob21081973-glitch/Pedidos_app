@@ -9,6 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  url_launcher: ^6.2.5
-  flutter_contacts: ^1.1.7
   shared_preferences: ^2.2.2
+  url_launcher: ^6.2.5
+  excel: ^4.0.3        # Para leer el archivo .xlsx
+  file_picker: ^8.0.0  # Para abrir el explorador y seleccionar el archivo
