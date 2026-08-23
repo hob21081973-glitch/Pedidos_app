@@ -130,12 +130,12 @@ class _MainScreenState extends State<MainScreen> {
       if (qty > 0) {
         var prod = _products.firstWhere((p) => p['name'] == product, orElse: () => {'price': 0.0});
         double price = (prod['price'] as num).toDouble();
-        buffer.writeln('• $product x$qty = \$${(price * qty).toStringAsFixed(2)}');
+        buffer.writeln('• $product x$qty = L ${(price * qty).toStringAsFixed(2)}');
       }
     });
 
     buffer.writeln('---------------------------');
-    buffer.writeln('*TOTAL: \$${_totalPrice.toStringAsFixed(2)}*');
+    buffer.writeln('*TOTAL: L ${_totalPrice.toStringAsFixed(2)}*');
     return buffer.toString();
   }
 
@@ -355,7 +355,7 @@ class _MainScreenState extends State<MainScreen> {
                       return ListTile(
                         dense: true,
                         title: Text(prod['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('\$${(prod['price'] as num).toStringAsFixed(2)}'),
+                        subtitle: Text('L ${(prod['price'] as num).toStringAsFixed(2)}'),
                         trailing: const Icon(Icons.add, color: Colors.green),
                         onTap: () {
                           setState(() {
@@ -394,7 +394,7 @@ class _MainScreenState extends State<MainScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                                  Text('\$${price.toStringAsFixed(2)}', style: const TextStyle(color: Colors.grey)),
+                                  Text('L ${price.toStringAsFixed(2)}', style: const TextStyle(color: Colors.grey)),
                                 ],
                               ),
                             ),
@@ -422,7 +422,7 @@ class _MainScreenState extends State<MainScreen> {
           child: Column(
             children: [
               Text(
-                'TOTAL: \$${_totalPrice.toStringAsFixed(2)}',
+                'TOTAL: L ${_totalPrice.toStringAsFixed(2)}',
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.green[800]),
               ),
               const SizedBox(height: 8),
@@ -501,7 +501,7 @@ class _MainScreenState extends State<MainScreen> {
               return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 child: ListTile(
-                  title: Text('${order['client']} - \$${(order['total'] as num).toStringAsFixed(2)}'),
+                  title: Text('${order['client']} - L ${(order['total'] as num).toStringAsFixed(2)}'),
                   subtitle: Text('Fecha: ${order['date']}\nItems: $itemsSummary'),
                   isThreeLine: true,
                   trailing: Row(
@@ -515,7 +515,7 @@ class _MainScreenState extends State<MainScreen> {
                       IconButton(
                         icon: const Icon(Icons.send, color: Colors.green),
                         onPressed: () {
-                          String msg = "*PEDIDO HISTÓRICO*\nCliente: ${order['client']}\nItems: $itemsSummary\nTotal: \$${order['total']}";
+                          String msg = "*PEDIDO HISTÓRICO*\nCliente: ${order['client']}\nItems: $itemsSummary\nTotal: L ${order['total']}";
                           _sendWhatsApp(customPhone: order['phone'], customMessage: msg);
                         },
                         tooltip: 'Enviar WhatsApp',
@@ -614,7 +614,7 @@ class _MainScreenState extends State<MainScreen> {
         return AlertDialog(
           title: Text(index == null ? 'Nuevo Cliente' : 'Editar Cliente'),
           content: Column(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize: FullTextEditingOption ?? MainAxisSize.min,
             children: [
               TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Nombre del cliente')),
               TextField(controller: phoneController, decoration: const InputDecoration(labelText: 'Teléfono (WhatsApp)'), keyboardType: TextInputType.phone),
@@ -677,7 +677,7 @@ class _MainScreenState extends State<MainScreen> {
                         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         child: ListTile(
                           title: Text(product['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text('\$${(product['price'] as num).toStringAsFixed(2)}'),
+                          subtitle: Text('L ${(product['price'] as num).toStringAsFixed(2)}'),
                           trailing: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
