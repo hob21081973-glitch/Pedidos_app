@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
-import 'package:excel/excel.dart';
+import 'package:csv/csv.dart';
 
 void main() {
   runApp(const MyApp());
@@ -109,58 +109,36 @@ class _MainScreenState extends State<MainScreen> {
     await prefs.setString('saved_products', jsonEncode(_products));
   }
 
-  // --- FUNCIÓN PARA IMPORTAR EXCEL COMPLETA ---
-  Future<void> _importExcel() async {
+  Future<void> _importCSV() async {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['xlsx', 'xls'],
+        type: FileType.any,
       );
 
       if (result != null && result.files.single.path != null) {
-        var bytes = File(result.files.single.path!).readAsBytesSync();
-        var excel = Excel.decodeBytes(bytes);
+        final input = File(result.files.single.path!).openRead();
+        final fields = await input
+            .transform(utf8.decoder)
+            .transform(const CsvToListConverter())
+            .toList();
 
-        int clientsAdded = 0;
-        int productsAdded = 0;
+        int importedCount = 0;
 
-        // 1. Leer Clientes (E=Indice 4, F=Indice 5)
-        for (var table in excel.tables.keys) {
-          if (table.toUpperCase().contains('CLIENTE')) {
-            var sheet = excel.tables[table];
-            if (sheet != null) {
-              for (var row in sheet.rows.skip(1)) {
-                if (row.length > 5) {
-                  var phoneVal = row[4]?.value?.toString().trim() ?? '';
-                  var nameVal = row[5]?.value?.toString().trim() ?? '';
+        for (var row in fields.skip(1)) {
+          if (row.length >= 2) {
+            String col0 = row[0].toString().trim();
+            String col1 = row[1].toString().trim();
 
-                  if (nameVal.isNotEmpty) {
-                    _clients.removeWhere((c) => c['name']!.toLowerCase() == nameVal.toLowerCase());
-                    _clients.add({'name': nameVal, 'phone': phoneVal});
-                    clientsAdded++;
-                  }
-                }
-              }
-            }
-          }
+            double? price = double.tryParse(col1.replaceAll('L', '').replaceAll('\$', '').trim());
 
-          // 2. Leer Productos (B=Indice 1, C=Indice 2)
-          if (table.toUpperCase().contains('PRODUCTO')) {
-            var sheet = excel.tables[table];
-            if (sheet != null) {
-              for (var row in sheet.rows.skip(1)) {
-                if (row.length > 2) {
-                  var nameVal = row[1]?.value?.toString().trim() ?? '';
-                  var priceRaw = row[2]?.value?.toString().replaceAll('L', '').replaceAll('\$', '').trim() ?? '0';
-                  double priceVal = double.tryParse(priceRaw) ?? 0.0;
-
-                  if (nameVal.isNotEmpty) {
-                    _products.removeWhere((p) => p['name'].toString().toLowerCase() == nameVal.toLowerCase());
-                    _products.add({'name': nameVal, 'price': priceVal});
-                    productsAdded++;
-                  }
-                }
-              }
+            if (price != null && col0.isNotEmpty) {
+              _products.removeWhere((p) => p['name'].toString().toLowerCase() == col0.toLowerCase());
+              _products.add({'name': col0, 'price': price});
+              importedCount++;
+            } else if (col0.isNotEmpty && col1.isNotEmpty) {
+              _clients.removeWhere((c) => c['name']!.toLowerCase() == col0.toLowerCase());
+              _clients.add({'name': col0, 'phone': col1});
+              importedCount++;
             }
           }
         }
@@ -172,14 +150,14 @@ class _MainScreenState extends State<MainScreen> {
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('¡Éxito! Importados: $productsAdded productos y $clientsAdded clientes.')),
+            SnackBar(content: Text('¡Éxito! Se importaron $importedCount registros.')),
           );
         }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al leer el archivo: $e')),
+          SnackBar(content: Text('Error al cargar archivo: $e')),
         );
       }
     }
@@ -222,7 +200,7 @@ class _MainScreenState extends State<MainScreen> {
     String? phone = customPhone ?? _selectedClient?['phone'];
     if (phone == null || phone.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Selecciona un cliente con número de teléfono validado.')),
+        const SnackBar(content: Text('Selecciona un cliente con número de teléfono.')),
       );
       return;
     }
@@ -308,6 +286,30 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
+  void _confirmDelete({required String title, required String message, required VoidCallback onConfirm}) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              onConfirm();
+              Navigator.pop(context);
+            },
+            child: const Text('Eliminar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -317,8 +319,8 @@ class _MainScreenState extends State<MainScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.file_upload),
-            tooltip: 'Cargar Excel (Clientes y Productos)',
-            onPressed: _importExcel,
+            tooltip: 'Importar Datos (CSV)',
+            onPressed: _importCSV,
           ),
           if (_editingOrderIndex != null)
             IconButton(
@@ -583,33 +585,55 @@ class _MainScreenState extends State<MainScreen> {
 
               return Card(
                 margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                child: ListTile(
-                  title: Text('${order['client']} - L ${(order['total'] as num).toStringAsFixed(2)}'),
-                  subtitle: Text('Fecha: ${order['date']}\nItems: $itemsSummary'),
-                  isThreeLine: true,
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
+                child: Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Row(
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.edit, color: Colors.blue),
-                        onPressed: () => _loadOrderForEditing(index),
-                        tooltip: 'Editar Pedido',
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${order['client']} - L ${(order['total'] as num).toStringAsFixed(2)}',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            ),
+                            const SizedBox(height: 4),
+                            Text('Fecha: ${order['date']}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                            Text('Items: $itemsSummary', style: const TextStyle(fontSize: 13)),
+                          ],
+                        ),
                       ),
-                      IconButton(
-                        icon: const Icon(Icons.send, color: Colors.green),
-                        onPressed: () {
-                          String msg = "*PEDIDO HISTÓRICO*\nCliente: ${order['client']}\nItems: $itemsSummary\nTotal: L ${order['total']}";
-                          _sendWhatsApp(customPhone: order['phone'], customMessage: msg);
-                        },
-                        tooltip: 'Enviar WhatsApp',
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () {
-                          setState(() => _orderHistory.removeAt(index));
-                          _saveData();
-                        },
-                        tooltip: 'Eliminar Pedido',
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit, color: Colors.blue),
+                            onPressed: () => _loadOrderForEditing(index),
+                            tooltip: 'Editar Pedido',
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.send, color: Colors.green),
+                            onPressed: () {
+                              String msg = "*PEDIDO HISTÓRICO*\nCliente: ${order['client']}\nItems: $itemsSummary\nTotal: L ${order['total']}";
+                              _sendWhatsApp(customPhone: order['phone'], customMessage: msg);
+                            },
+                            tooltip: 'Enviar WhatsApp',
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.red),
+                            onPressed: () {
+                              _confirmDelete(
+                                title: 'Eliminar Pedido',
+                                message: '¿Estás seguro de que deseas eliminar este pedido de ${order['client']}?',
+                                onConfirm: () {
+                                  setState(() => _orderHistory.removeAt(index));
+                                  _saveData();
+                                },
+                              );
+                            },
+                            tooltip: 'Eliminar Pedido',
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -665,8 +689,14 @@ class _MainScreenState extends State<MainScreen> {
                               IconButton(
                                 icon: const Icon(Icons.delete, color: Colors.red),
                                 onPressed: () {
-                                  setState(() => _clients.removeAt(originalIndex));
-                                  _saveData();
+                                  _confirmDelete(
+                                    title: 'Eliminar Cliente',
+                                    message: '¿Estás seguro de que deseas eliminar a ${client['name']}?',
+                                    onConfirm: () {
+                                      setState(() => _clients.removeAt(originalIndex));
+                                      _saveData();
+                                    },
+                                  );
                                 },
                                 tooltip: 'Eliminar Cliente',
                               ),
@@ -772,11 +802,17 @@ class _MainScreenState extends State<MainScreen> {
                               IconButton(
                                 icon: const Icon(Icons.delete, color: Colors.red),
                                 onPressed: () {
-                                  setState(() {
-                                    _cart.remove(_products[originalIndex]['name']);
-                                    _products.removeAt(originalIndex);
-                                  });
-                                  _saveData();
+                                  _confirmDelete(
+                                    title: 'Eliminar Producto',
+                                    message: '¿Estás seguro de que deseas eliminar ${product['name']}?',
+                                    onConfirm: () {
+                                      setState(() {
+                                        _cart.remove(_products[originalIndex]['name']);
+                                        _products.removeAt(originalIndex);
+                                      });
+                                      _saveData();
+                                    },
+                                  );
                                 },
                                 tooltip: 'Eliminar Producto',
                               ),
