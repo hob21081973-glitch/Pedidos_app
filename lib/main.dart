@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
+import 'package:excel/excel.dart';
 
 void main() {
   runApp(const MyApp());
@@ -104,6 +107,82 @@ class _MainScreenState extends State<MainScreen> {
     await prefs.setString('order_history', jsonEncode(_orderHistory));
     await prefs.setString('saved_clients', jsonEncode(_clients));
     await prefs.setString('saved_products', jsonEncode(_products));
+  }
+
+  // --- FUNCIÓN PARA IMPORTAR EXCEL COMPLETA ---
+  Future<void> _importExcel() async {
+    try {
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['xlsx', 'xls'],
+      );
+
+      if (result != null && result.files.single.path != null) {
+        var bytes = File(result.files.single.path!).readAsBytesSync();
+        var excel = Excel.decodeBytes(bytes);
+
+        int clientsAdded = 0;
+        int productsAdded = 0;
+
+        // 1. Leer Clientes (E=Indice 4, F=Indice 5)
+        for (var table in excel.tables.keys) {
+          if (table.toUpperCase().contains('CLIENTE')) {
+            var sheet = excel.tables[table];
+            if (sheet != null) {
+              for (var row in sheet.rows.skip(1)) {
+                if (row.length > 5) {
+                  var phoneVal = row[4]?.value?.toString().trim() ?? '';
+                  var nameVal = row[5]?.value?.toString().trim() ?? '';
+
+                  if (nameVal.isNotEmpty) {
+                    _clients.removeWhere((c) => c['name']!.toLowerCase() == nameVal.toLowerCase());
+                    _clients.add({'name': nameVal, 'phone': phoneVal});
+                    clientsAdded++;
+                  }
+                }
+              }
+            }
+          }
+
+          // 2. Leer Productos (B=Indice 1, C=Indice 2)
+          if (table.toUpperCase().contains('PRODUCTO')) {
+            var sheet = excel.tables[table];
+            if (sheet != null) {
+              for (var row in sheet.rows.skip(1)) {
+                if (row.length > 2) {
+                  var nameVal = row[1]?.value?.toString().trim() ?? '';
+                  var priceRaw = row[2]?.value?.toString().replaceAll('L', '').replaceAll('\$', '').trim() ?? '0';
+                  double priceVal = double.tryParse(priceRaw) ?? 0.0;
+
+                  if (nameVal.isNotEmpty) {
+                    _products.removeWhere((p) => p['name'].toString().toLowerCase() == nameVal.toLowerCase());
+                    _products.add({'name': nameVal, 'price': priceVal});
+                    productsAdded++;
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        setState(() {
+          _resetCart();
+        });
+        await _saveData();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('¡Éxito! Importados: $productsAdded productos y $clientsAdded clientes.')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al leer el archivo: $e')),
+        );
+      }
+    }
   }
 
   double get _totalPrice {
@@ -235,20 +314,24 @@ class _MainScreenState extends State<MainScreen> {
       appBar: AppBar(
         title: Text(_editingOrderIndex != null ? 'Editando Pedido' : 'Sistema de Pedidos'),
         backgroundColor: Colors.green[700],
-        actions: _editingOrderIndex != null
-            ? [
-                IconButton(
-                  icon: const Icon(Icons.cancel),
-                  onPressed: () {
-                    setState(() {
-                      _editingOrderIndex = null;
-                      _resetCart();
-                      _selectedClient = null;
-                    });
-                  },
-                )
-              ]
-            : null,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.file_upload),
+            tooltip: 'Cargar Excel (Clientes y Productos)',
+            onPressed: _importExcel,
+          ),
+          if (_editingOrderIndex != null)
+            IconButton(
+              icon: const Icon(Icons.cancel),
+              onPressed: () {
+                setState(() {
+                  _editingOrderIndex = null;
+                  _resetCart();
+                  _selectedClient = null;
+                });
+              },
+            ),
+        ],
       ),
       body: IndexedStack(
         index: _selectedIndex,
