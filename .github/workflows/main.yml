@@ -24,7 +24,7 @@ jobs:
           channel: 'stable'
 
       - name: Recreate Android Directory
-        run: flutter create . --platforms=android
+        run: flutter create . --project-name pedidos_app --platforms=android --overwrite
 
       - name: Get dependencies
         run: flutter pub get
